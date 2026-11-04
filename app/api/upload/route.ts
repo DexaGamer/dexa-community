@@ -32,17 +32,21 @@ export async function POST(request: Request) {
     const icon = formData.get("icon") as File | null;
 
     const projectId = formData.get("projectId")?.toString() || null;
+    
+    // Variables para la subida directa
+    const directGameId = formData.get("directGameId")?.toString() || null;
+    const directGameSize = Number(formData.get("directGameSize") || 0);
 
-    if (!file && !cover && !icon && !projectId) {
+    if (!file && !cover && !icon && !projectId && !directGameId) {
       return NextResponse.json(
         { error: "No se recibieron datos." },
         { status: 400 }
       );
     }
 
-    if (!projectId && !file) {
+    if (!projectId && !file && !directGameId) {
       return NextResponse.json(
-        { error: "Un proyecto nuevo necesita un archivo .catrobat." },
+        { error: "Un proyecto nuevo necesita un archivo de juego." },
         { status: 400 }
       );
     }
@@ -126,7 +130,7 @@ export async function POST(request: Request) {
     };
 
     // 5. Conservar IDs anteriores si no se reemplazan
-    let gameId = proyectoAnterior?.drive_file_id || null;
+    let gameId = directGameId || proyectoAnterior?.drive_file_id || null;
     let coverId = proyectoAnterior?.cover_file_id || null;
     let iconId = proyectoAnterior?.icon_file_id || null;
 
@@ -168,9 +172,23 @@ export async function POST(request: Request) {
     if (cover) coverId = await subirADrive(cover);
     if (icon) iconId = await subirADrive(icon);
 
+    // Asignar permisos si el archivo se subió directamente
+    if (directGameId && drive) {
+      try {
+        await drive.permissions.create({
+          fileId: directGameId,
+          requestBody: { role: "reader", type: "anyone" },
+        });
+      } catch (permError) {
+        console.warn("Permiso ya existente o asignado:", permError);
+      }
+    }
+
     // 7. Calcular el tamaño total del proyecto
-    const tamañoJuego = file
-      ? file.size
+    const tamañoJuego = directGameId 
+      ? directGameSize 
+      : file 
+      ? file.size 
       : await obtenerTamaño(gameId);
 
     const tamañoCover = cover
@@ -201,7 +219,7 @@ export async function POST(request: Request) {
       drive_file_id: gameId,
       cover_file_id: coverId,
       icon_file_id: iconId,
-      jam_id: jamId || null, // 👈 ¡ESTA ES LA LÍNEA MÁGICA!
+      jam_id: jamId || null, 
     };
 
     // 9. Guardar proyecto y actualizar almacenamiento en una transacción
@@ -257,14 +275,14 @@ export async function POST(request: Request) {
 
     // 10. Solo ahora eliminar los archivos anteriores reemplazados
     const archivosAnteriores = [
-      file ? proyectoAnterior?.drive_file_id : null,
+      (file || directGameId) ? proyectoAnterior?.drive_file_id : null, // Modificado para directGameId
       cover ? proyectoAnterior?.cover_file_id : null,
       icon ? proyectoAnterior?.icon_file_id : null,
     ].filter(Boolean) as string[];
 
     for (const id of archivosAnteriores) {
       try {
-        await drive.files.delete({ fileId: id });
+        await drive!.files.delete({ fileId: id });
       } catch (error) {
         console.warn("No se pudo eliminar archivo anterior:", id, error);
       }

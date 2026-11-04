@@ -29,6 +29,7 @@ function FormularioSubir() {
   const [modo, setModo] = useState<"nuevo" | "actualizar">("nuevo");
   const [misProyectos, setMisProyectos] = useState<ProyectoExistente[]>([]);
   const [proyectoIdSeleccionado, setProyectoIdSeleccionado] = useState<string>("");
+  const [porcentajeSubida, setPorcentajeSubida] = useState<number>(0);
 
   const [titulo, setTitulo] = useState("");
   const [descripcion, setDescripcion] = useState("");
@@ -240,22 +241,69 @@ function FormularioSubir() {
       return;
     }
 
-    const actual = misProyectos.find(
-      (p) => p.id === proyectoIdSeleccionado
-    );
-
+    const actual = misProyectos.find((p) => p.id === proyectoIdSeleccionado);
     if (modo === "actualizar" && !actual) {
       alert("No se encontró el proyecto seleccionado.");
       return;
     }
 
     setEstado("subiendo");
+    setPorcentajeSubida(0);
 
     try {
+      let directGameId: string | null = null;
+
+      // 1. SI HAY ARCHIVO DEL JUEGO: SUBIR DIRECTO A GOOGLE DRIVE
+      if (archivo) {
+        // Pedir sesión a Google
+        const sesionRes = await fetch("/api/upload/session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileName: archivo.name,
+            fileSize: archivo.size,
+            mimeType: archivo.type || "application/octet-stream",
+          }),
+        });
+
+        const sesionData = await sesionRes.json();
+        if (!sesionRes.ok || !sesionData.uploadUrl) {
+          throw new Error(sesionData.error || "No se pudo iniciar la conexión con Google Drive.");
+        }
+
+        // Subir directamente a Google con seguimiento de porcentaje
+        directGameId = await new Promise<string>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("PUT", sesionData.uploadUrl, true);
+
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              const porcentaje = Math.round((event.loaded / event.total) * 100);
+              setPorcentajeSubida(porcentaje);
+            }
+          };
+
+          xhr.onload = () => {
+            if (xhr.status === 200 || xhr.status === 201) {
+              const resJson = JSON.parse(xhr.responseText);
+              resolve(resJson.id);
+            } else {
+              reject(new Error("Error enviando datos a Google Drive."));
+            }
+          };
+
+          xhr.onerror = () => reject(new Error("Fallo de red al conectar con Google Drive."));
+          xhr.send(archivo);
+        });
+      }
+
+      // 2. ENVIAR METADATOS Y MINIATURAS A LA API
+      setEstado("guardando");
       const formData = new FormData();
 
-      if (archivo) {
-        formData.append("file", archivo);
+      if (directGameId && archivo) {
+        formData.append("directGameId", directGameId);
+        formData.append("directGameSize", archivo.size.toString());
       }
 
       if (coverBlob) {
@@ -270,12 +318,11 @@ function FormularioSubir() {
         formData.append("projectId", actual.id);
       }
 
-      formData.append("title", titulo.trim());
-      
       if (jamIdSeleccionada) {
         formData.append("jamId", jamIdSeleccionada);
       }
-      
+
+      formData.append("title", titulo.trim());
       formData.append("description", descripcion.trim());
       formData.append("category", categoria);
       formData.append("accentColor", accentColor);
@@ -289,21 +336,15 @@ function FormularioSubir() {
       });
 
       const dataUpload = await res.json();
-
       if (!res.ok || !dataUpload.success) {
         throw new Error(dataUpload.error || "No se pudo guardar el proyecto.");
       }
 
       setEstado("exito");
-
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error guardando proyecto:", error);
       setEstado("esperando");
-      alert(
-        error instanceof Error
-          ? error.message
-          : "Hubo un error al guardar el proyecto."
-      );
+      alert(error.message || "Hubo un error al guardar el proyecto.");
     }
   };
 
@@ -674,26 +715,26 @@ function FormularioSubir() {
             </div>
 
             <button
-              type="submit"
-              disabled={estado === "subiendo" || estado === "guardando"}
-              className={`w-full py-3.5 rounded-xl font-bold transition ${
-                estado === "subiendo" || estado === "guardando"
-                  ? "bg-gray-800 text-gray-500 cursor-wait"
-                  : estado === "exito"
-                  ? "hidden"
-                  : modo === "nuevo"
-                  ? "bg-blue-600 hover:bg-blue-500 text-white"
-                  : "bg-indigo-600 hover:bg-indigo-500 text-white"
-              }`}
-            >
-              {estado === "subiendo"
-                ? "🚀 Subiendo a Google Drive..."
-                : estado === "guardando"
-                ? "💾 Guardando cambios..."
-                : modo === "nuevo"
-                ? "Publicar Proyecto"
-                : "Guardar Actualización"}
-            </button>
+  type="submit"
+  disabled={estado === "subiendo" || estado === "guardando"}
+  className={`w-full py-3.5 rounded-xl font-bold transition ${
+    estado === "subiendo" || estado === "guardando"
+      ? "bg-gray-800 text-blue-400 cursor-wait"
+      : estado === "exito"
+      ? "hidden"
+      : modo === "nuevo"
+      ? "bg-blue-600 hover:bg-blue-500 text-white"
+      : "bg-indigo-600 hover:bg-indigo-500 text-white"
+  }`}
+>
+  {estado === "subiendo"
+    ? `🚀 Subiendo a la nube... ${porcentajeSubida}%`
+    : estado === "guardando"
+    ? "💾 Registrando en Dexa Community..."
+    : modo === "nuevo"
+    ? "Publicar Proyecto"
+    : "Guardar Actualización"}
+</button>
           </form>
           
           {estado === "exito" && (
