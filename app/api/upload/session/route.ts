@@ -12,6 +12,9 @@ export async function POST(request: Request) {
     }
 
     const { fileName, fileSize, mimeType } = await request.json();
+    
+    // 1. Obtenemos el origen de la web (https://dexa-community.vercel.app)
+    const origin = request.headers.get("origin") || "https://dexa-community.vercel.app";
 
     const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
@@ -29,7 +32,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Fallo de autenticación con Google." }, { status: 500 });
     }
 
-    // Pedirle a Google Drive la URL de subida reanudable
+    // 2. Pedirle a Google Drive la URL de subida reanudable enviando el Origin
     const driveRes = await fetch(
       "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable",
       {
@@ -39,6 +42,7 @@ export async function POST(request: Request) {
           "Content-Type": "application/json; charset=UTF-8",
           "X-Upload-Content-Type": mimeType || "application/octet-stream",
           "X-Upload-Content-Length": String(fileSize),
+          Origin: origin, // 👈 ¡ESTA LÍNEA HABILITA EL CORS EN GOOGLE DRIVE!
         },
         body: JSON.stringify({
           name: fileName,

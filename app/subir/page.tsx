@@ -276,6 +276,8 @@ function FormularioSubir() {
           const xhr = new XMLHttpRequest();
           xhr.open("PUT", sesionData.uploadUrl, true);
 
+          xhr.setRequestHeader("Content-Type", archivo.type || "application/octet-stream");
+
           xhr.upload.onprogress = (event) => {
             if (event.lengthComputable) {
               const porcentaje = Math.round((event.loaded / event.total) * 100);
