@@ -12,9 +12,10 @@ export async function GET(request) {
     const featuredOnly = searchParams.get("featured") === "true";
     const limit = Number(searchParams.get("limit")) || 5;
 
+    // Pedimos * para no fallar si cambia algún nombre de columna
     let query = supabase
       .from("projects")
-      .select("id, title, cover_drive_id, is_featured")
+      .select("*")
       .order("created_at", { ascending: false })
       .limit(limit);
 
@@ -28,13 +29,28 @@ export async function GET(request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    const proyectos = (data || []).map((p) => ({
-      id: p.id,
-      title: p.title,
-      coverUrl: p.cover_drive_id
-        ? `https://lh3.googleusercontent.com/d/${p.cover_drive_id}`
-        : null,
-    }));
+    const proyectos = (data || []).map((p) => {
+      // Busca automáticamente la columna que guarde la imagen
+      const rawCover =
+        p.cover_url ||
+        p.image_url ||
+        p.cover ||
+        p.thumbnail_url ||
+        p.portada_url ||
+        null;
+
+      // Si es un ID de Google Drive lo convierte a URL, si ya es URL lo deja pasar
+      let finalCover = rawCover;
+      if (rawCover && !rawCover.startsWith("http")) {
+        finalCover = `https://lh3.googleusercontent.com/d/${rawCover}`;
+      }
+
+      return {
+        id: p.id,
+        title: p.title || p.name || "Sin título",
+        coverUrl: finalCover,
+      };
+    });
 
     return NextResponse.json(proyectos);
   } catch (err) {
