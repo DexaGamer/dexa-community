@@ -12,7 +12,6 @@ export async function GET(request) {
     const featuredOnly = searchParams.get("featured") === "true";
     const limit = Number(searchParams.get("limit")) || 5;
 
-    // Pedimos * para no fallar si cambia algún nombre de columna
     let query = supabase
       .from("projects")
       .select("*")
@@ -30,25 +29,20 @@ export async function GET(request) {
     }
 
     const proyectos = (data || []).map((p) => {
-      // Busca automáticamente la columna que guarde la imagen
-      const rawCover =
-        p.cover_url ||
-        p.image_url ||
-        p.cover ||
-        p.thumbnail_url ||
-        p.portada_url ||
-        null;
+      // Columna confirmada de tu base de datos
+      const rawId = p.icon_file_id || p.cover_drive_id || null;
 
-      // Si es un ID de Google Drive lo convierte a URL, si ya es URL lo deja pasar
-      let finalCover = rawCover;
-      if (rawCover && !rawCover.startsWith("http")) {
-        finalCover = `https://lh3.googleusercontent.com/d/${rawCover}`;
+      let finalUrl = null;
+      if (rawId) {
+        finalUrl = rawId.startsWith("http")
+          ? rawId
+          : `https://lh3.googleusercontent.com/d/${rawId}`;
       }
 
       return {
         id: p.id,
         title: p.title || p.name || "Sin título",
-        coverUrl: finalCover,
+        coverUrl: finalUrl,
       };
     });
 
